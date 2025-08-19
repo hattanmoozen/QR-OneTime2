@@ -1,62 +1,37 @@
-from flask import Flask, send_file
+from flask import Flask, request, send_file
 import sqlite3
 import os
 
 app = Flask(__name__)
 
-DB_FILE = "barcodes.db"
+DB_PATH = 'barcodes.db'
+BARCODES_FOLDER = 'barcodes'  # مجلد الصور بعد فك ZIP
 
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS barcodes (
-                    code TEXT PRIMARY KEY,
-                    used INTEGER DEFAULT 0
-                )''')
-    conn.commit()
-    conn.close()
-
-@app.route('/scan/<code>')
-def scan(code):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT used FROM barcodes WHERE code=?", (code,))
-    row = c.fetchone()
-
-    if row is None:
-        # الكود غير موجود
-        conn.close()
-        return "❌ الكود غير صالح"
-
-    if row[0] == 0:
-        # أول مرة
-        c.execute("UPDATE barcodes SET used=1 WHERE code=?", (code,))
-        conn.commit()
-        conn.close()
-        return send_file("success.jpg", mimetype="image/jpeg")
-    else:
-        # تم استخدامه من قبل
-        conn.close()
-import os
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-@app.route("/verify/<code>")
-def verify(code):
-    conn = sqlite3.connect(os.path.join(BASE_DIR, "barcodes.db"))
+@app.route('/scan/<uuid>')
+def scan(uuid):
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT used FROM barcodes WHERE code = ?", (code,))
+    cursor.execute("SELECT used FROM barcodes WHERE uuid=?", (uuid,))
     row = cursor.fetchone()
-    if row and row[0] == 0:
-        cursor.execute("UPDATE barcodes SET used = 1 WHERE code = ?", (code,))
+    if row is None:
+        conn.close()
+        return "باركود غير موجود", 404
+    elif row[0]:
+        conn.close()
+        return "الباركود غير صالح", 400
+    else:
+        cursor.execute("UPDATE barcodes SET used=1 WHERE uuid=?", (uuid,))
         conn.commit()
         conn.close()
-        return send_file(os.path.join(BASE_DIR, "success.jpg"), mimetype="image/jpeg")
+        return "تم المسح بنجاح ✅"
+
+@app.route('/barcode/<uuid>')
+def get_barcode(uuid):
+    file_path = os.path.join(BARCODES_FOLDER, f"{uuid}.png")
+    if os.path.exists(file_path):
+        return send_file(file_path, mimetype='image/png')
     else:
-        conn.close()
-        return send_file(os.path.join(BASE_DIR, "used.jpg"), mimetype="image/jpeg")
+        return "باركود غير موجود", 404
 
 if __name__ == '__main__':
-    init_db()
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host='0.0.0.0', port=5000)

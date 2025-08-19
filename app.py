@@ -37,7 +37,24 @@ def scan(code):
     else:
         # تم استخدامه من قبل
         conn.close()
-        return send_file("used.jpg", mimetype="image/jpeg")
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+@app.route("/verify/<code>")
+def verify(code):
+    conn = sqlite3.connect(os.path.join(BASE_DIR, "barcodes.db"))
+    cursor = conn.cursor()
+    cursor.execute("SELECT used FROM barcodes WHERE code = ?", (code,))
+    row = cursor.fetchone()
+    if row and row[0] == 0:
+        cursor.execute("UPDATE barcodes SET used = 1 WHERE code = ?", (code,))
+        conn.commit()
+        conn.close()
+        return send_file(os.path.join(BASE_DIR, "success.jpg"), mimetype="image/jpeg")
+    else:
+        conn.close()
+        return send_file(os.path.join(BASE_DIR, "used.jpg"), mimetype="image/jpeg")
 
 if __name__ == '__main__':
     init_db()

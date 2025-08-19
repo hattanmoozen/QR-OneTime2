@@ -1,37 +1,45 @@
-from flask import Flask, request, send_file
+from flask import Flask, send_file
 import sqlite3
 import os
 
 app = Flask(__name__)
 
-DB_PATH = 'barcodes.db'
-BARCODES_FOLDER = 'barcodes'  # مجلد الصور بعد فك ZIP
+DB_FILE = "barcodes.db"
 
-@app.route('/scan/<uuid>')
-def scan(uuid):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT used FROM barcodes WHERE uuid=?", (uuid,))
-    row = cursor.fetchone()
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS barcodes (
+                    code TEXT PRIMARY KEY,
+                    used INTEGER DEFAULT 0
+                )''')
+    conn.commit()
+    conn.close()
+
+@app.route('/scan/<code>')
+def scan(code):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT used FROM barcodes WHERE code=?", (code,))
+    row = c.fetchone()
+
     if row is None:
+        # الكود غير موجود
         conn.close()
-        return "باركود غير موجود", 404
-    elif row[0]:
-        conn.close()
-        return "الباركود غير صالح", 400
-    else:
-        cursor.execute("UPDATE barcodes SET used=1 WHERE uuid=?", (uuid,))
+        return "❌ الكود غير صالح"
+
+    if row[0] == 0:
+        # أول مرة
+        c.execute("UPDATE barcodes SET used=1 WHERE code=?", (code,))
         conn.commit()
         conn.close()
-        return "تم المسح بنجاح ✅"
-
-@app.route('/barcode/<uuid>')
-def get_barcode(uuid):
-    file_path = os.path.join(BARCODES_FOLDER, f"{uuid}.png")
-    if os.path.exists(file_path):
-        return send_file(file_path, mimetype='image/png')
+        return send_file("success.jpg", mimetype="image/jpeg")
     else:
-        return "باركود غير موجود", 404
+        # تم استخدامه من قبل
+        conn.close()
+        return send_file("used.jpg", mimetype="image/jpeg")
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    init_db()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
